@@ -8,12 +8,12 @@
         <v-card class="mx-auto" elevation="16">
           <v-card-title>Create or Join Room</v-card-title>
           <v-card-text class="card-content">
-            <v-form @submit.prevent="handleRoomAction">
-              <v-text-field v-model="roomName" label="Room Name" required></v-text-field>
-              <v-text-field v-model="username" label="User Name" required></v-text-field>
+            <v-form ref="formRef" @submit.prevent="handleRoomAction">
+              <v-text-field v-model="roomName" label="Room Name" required :rules="roomNameRules"></v-text-field>
+              <v-text-field v-model="username" label="User Name" required :rules="usernameRules"></v-text-field>
               <div class="btn-container">
-                <v-btn @click="handleRoomAction('create')" color="primary" class="mr-2">Create</v-btn>
-                <v-btn @click="handleRoomAction('join')" color="primary" class="mr-2">Join</v-btn>
+                <v-btn @click="handleCreateRoom" color="primary" class="mr-2">Create</v-btn>
+                <v-btn @click="handleJoinRoom" color="primary" class="mr-2">Join</v-btn>
               </div>
             </v-form>
           </v-card-text>
@@ -21,37 +21,50 @@
       </v-col>
     </v-row>
   </v-container>
+  <ErrorSnackbar :message="errorMessage" />
 </template>
 
 <script setup>
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { createRoom, joinRoom } from '@/services/api';
+import ErrorSnackbar from '@/components/ErrorSnackbar.vue';
 
 const roomName = ref('');
 const username = ref('');
 const router = useRouter();
+const errorMessage = ref('');
+const formRef = ref('');
+
+const roomNameRules = [
+  (v) => !!v || 'Room Name is required.'
+];
+const usernameRules = [
+  (v) => !!v || 'User Name is required.'
+];
+
+const handleCreateRoom = async () => {
+  await handleRoomAction('create');
+};
+
+const handleJoinRoom = async () => {
+  await handleRoomAction('join');
+};
 
 const handleRoomAction = async (action) => {
+  const isValid = await formRef.value.validate();
+  if (!isValid.valid) {
+    return;
+  }
+
   try {
-    if (action === 'create') {
-      const roomId = await createRoom(roomName.value, username.value);
-      console.log('Room created. Redirecting to room:', roomId);
-      // Save room name and username to local storage
-      localStorage.setItem('roomName', roomName.value);
-      localStorage.setItem('username', username.value);
-      router.push({ name: 'room', params: { id: roomId } });
-    } else if (action === 'join') {
-      const roomId = await joinRoom(roomName.value);
-      console.log('Joined room. Redirecting to room:', roomId);
-      // Save room name and username to local storage
-      localStorage.setItem('roomName', roomName.value);
-      localStorage.setItem('username', username.value);
-      router.push({ name: 'room', params: { id: roomId } });
-    }
+    const roomId = action === 'create' ? await createRoom(roomName.value, username.value) : await joinRoom(roomName.value, username.value);
+    router.push({ name: 'room', params: { id: roomId } });
   } catch (error) {
-    console.error(`Error ${action}ing room:`, error.message);
-    // Handle error (e.g., show an error message to the user)
+    errorMessage.value = error.message;
+    setTimeout(() => {
+        errorMessage.value = '';
+    }, 2000)
   }
 };
 
@@ -84,6 +97,6 @@ const handleRoomAction = async (action) => {
 
 .btn-container {
   display: flex;
-  justify-content:flex-end;
+  justify-content: flex-end;
 }
 </style>

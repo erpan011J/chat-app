@@ -15,9 +15,12 @@ class RoomViewSet(viewsets.ModelViewSet):
         if room_name is None:
             return Response(status=status.HTTP_400_BAD_REQUEST)
         
-        room = Room.objects.get(name__iexact=room_name)
-        serializer = RoomSerializer(room)
-        return Response(serializer.data)
+        try:
+            room = Room.objects.get(name__iexact=room_name)
+            serializer = RoomSerializer(room)
+            return Response(serializer.data)
+        except Room.DoesNotExist:
+            return Response({'error': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=True, methods=['get'])
     def messages(self, request, pk=None, name=None):

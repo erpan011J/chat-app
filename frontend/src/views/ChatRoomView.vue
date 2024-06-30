@@ -2,7 +2,7 @@
   <v-container fluid>
     <v-card class="chat-room-card">
       <v-card-title>
-        <h2>Chat Room: {{ roomName }}</h2>
+        <h2>Chat Room: {{ chatStore.roomName }}</h2>
       </v-card-title>
 
       <v-divider></v-divider>
@@ -13,7 +13,8 @@
             <v-col cols="12">
               <div class="message-list">
                 <div v-for="message in messages" :key="message.id" class="message">
-                  <p :class="{ 'user-message': message.author === username, 'other-message': message.author !== username }">
+                  <p
+                    :class="{ 'user-message': message.author === chatStore.userName, 'other-message': message.author !== chatStore.userName }">
                     <strong>{{ message.author }}:</strong> {{ message.content }}
                   </p>
                   <small>{{ new Date(message.timestamp).toLocaleString() }}</small>
@@ -34,80 +35,93 @@
       </v-card-actions>
     </v-card>
   </v-container>
+  <ErrorSnackbar :message="errorMessage" />
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { useChatStore } from '@/stores/chatStore';
 import { fetchMessages } from '@/services/api';
+import ErrorSnackbar from '@/components/ErrorSnackbar.vue';
 
-const route = useRoute();
-const roomName = ref(localStorage.getItem('roomName'));
-const username = ref(localStorage.getItem('username'));
+const chatStore = useChatStore();
 const messages = ref([]);
 const newMessage = ref('');
+const errorMessage = ref('');
 
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const wsHost = window.location.hostname;
 const wsPort = '8000';
-const wsPath = `${wsProtocol}//${wsHost}:${wsPort}/ws/chat/${roomName.value}/`;
-const websocket = new WebSocket(wsPath);
-websocket.onopen = () => {
-  console.log('WebSocket connected');
+
+let websocket = null;
+
+const setupWebSocket = () => {
+  const wsPath = `${wsProtocol}//${wsHost}:${wsPort}/ws/chat/${chatStore.roomName}/`;
+  websocket = new WebSocket(wsPath);
+
+  websocket.onopen = () => {
+    console.log('WebSocket connected');
+  };
+
+  websocket.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    messages.value.push(message);
+  };
+
+  websocket.onerror = (error) => {
+    console.error('WebSocket error:', error);
+  };
+
+  websocket.onclose = () => {
+    console.log('WebSocket closed');
+  };
 };
 
-websocket.onmessage = (event) => {
-  const message = JSON.parse(event.data);
-  messages.value.push(message);
-};
-
-websocket.onerror = (error) => {
-  console.error('WebSocket error:', error);
-};
-
-websocket.onclose = () => {
-  console.log('WebSocket closed');
-};
-
-
-const handleFetchMessages = () => {
-  fetchMessages(roomName.value)
-    .then(data => {
-      messages.value = data;
-    })
-    .catch(error => {
-      console.error('Error fetching messages:', error);
-    });
+const handleFetchMessages = async () => {
+    try {
+        const data = await fetchMessages(chatStore.roomName);
+        messages.value = data;
+    } catch (error) {
+        errorMessage.value = error.message;
+        setTimeout(() => {
+            errorMessage.value = '';
+        }, 2000);
+    }
 };
 
 const handleSendMessage = () => {
   if (newMessage.value.trim() === '') {
-    return; // Don't send empty messages
+    return;
   }
 
   const message = {
     content: newMessage.value,
-    author: username.value,
+    author: chatStore.userName,
   };
 
-  // Send message data as JSON over WebSocket
   websocket.send(JSON.stringify(message));
-
-  // Clear the message input field
   newMessage.value = '';
 };
 
 onMounted(() => {
+  if (!chatStore.userName) {
+    chatStore.setUserName(localStorage.getItem('username') || '');
+  }
+
+  if (!chatStore.roomName) {
+    chatStore.setRoomName(localStorage.getItem('roomName') || '');
+  }
+  setupWebSocket();
   handleFetchMessages();
-  // Nothing needed here if no specific action on mount
 });
 </script>
 
 <style scoped>
 .message-container {
-  height: 50vh; /* Adjust height as needed */
-  overflow-y: auto; /* Enable vertical scrolling */
+  height: 50vh;
+  overflow-y: auto;
 }
+
 .chat-room-card {
   max-width: 800px;
   margin: 0 auto;
@@ -120,7 +134,6 @@ onMounted(() => {
 
 .user-message {
   background-color: #dff9fb;
-  /* Light blue background for user's messages */
   border-radius: 15px;
   padding: 10px;
   max-width: 70%;
@@ -129,7 +142,6 @@ onMounted(() => {
 
 .other-message {
   background-color: #f0f0f0;
-  /* Light grey background for other users' messages */
   border-radius: 15px;
   padding: 10px;
   max-width: 70%;
